@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List
 from unittest import TestCase
 
-from digittree import DigitTree, common_prefix
+from test_helper.digittree import DigitTree, common_prefix
 
 
 class TextCommonPrefix(TestCase):
