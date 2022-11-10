@@ -8,8 +8,8 @@ import webbrowser
 from functools import wraps
 from unittest import TestCase, skip
 
-from randomlocation import RandomLocation
-from randomlocation.geo_nominatim import GeoNominatim
+from test_helper.randomlocation import RandomLocation
+from test_helper.randomlocation.geo_nominatim import GeoNominatim
 from testbase import time_it, GeoCodifyEnv
 
 
