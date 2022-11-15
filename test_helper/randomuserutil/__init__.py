@@ -12,7 +12,7 @@ from wxc_sdk.as_api import AsWebexSimpleApi
 from wxc_sdk.people import Person
 
 from test_helper import webexactivation
-from test_helper.randomuser import RandomUser, User
+from test_helper.randomuser import RandomUserApi, User
 
 __all__ = ['RandomUserUtil']
 
@@ -68,7 +68,7 @@ class RandomUserUtil:
         existing_display_names = set(u.display_name for u in existing_users)
 
         while len(new_users) < number_of_users:
-            async with RandomUser() as random_user:
+            async with RandomUserApi() as random_user:
                 # get new users
                 new_batch = await random_user.users(results=number_of_users - len(new_users),
                                                     inc='name',

@@ -11,7 +11,7 @@ from aiohttp import ClientSession
 from pydantic import BaseModel
 
 __all__ = ['Name', 'Street', 'Coordinates', 'Timezone', 'Location', 'Login', 'DOB', 'Registered', 'ID', 'Picture',
-           'User', 'RandomUser']
+           'User', 'RandomUserApi']
 
 
 class ResultInfo(BaseModel):
@@ -137,7 +137,7 @@ def validate(var: Union[None, str, List[str]],
     return ','.join(var)
 
 
-class RandomUser:
+class RandomUserApi:
     BASE = 'https://randomuser.me/api/'
     ALLOWED_INC_DEC = ['gender', 'name', 'location', 'email', 'login', 'registered', 'dob', 'phone', 'cell', 'id',
                        'picture', 'nat']
