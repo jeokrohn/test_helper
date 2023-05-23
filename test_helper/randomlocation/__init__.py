@@ -444,7 +444,12 @@ class RandomLocation:
         next(csv_io)
 
         reader = DictReader(csv_io)
-        result = [NpaInfo.parse_obj(row) for row in reader]
+        result = list()
+        for row in reader:
+            # Weirdness... There is a row with None as key?
+            row.pop(None, None)
+            npa_info = NpaInfo.parse_obj(row)
+            result.append(npa_info)
         return result
 
     async def npa_cities(self, *, npa: str) -> List[NpaCity]:
