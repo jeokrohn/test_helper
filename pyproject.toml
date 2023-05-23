@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "test_helper"
-version = "0.2.2"
+version = "0.2.3"
 description = ""
 authors = ["Your Name <you@example.com>"]
 
@@ -9,10 +9,10 @@ python = "^3.9"
 aiohttp = "^3.8.3"
 pydantic = "^1.10.2"
 beautifulsoup4 = "^4.11.1"
-python-dotenv = "^0.21.0"
 geopy = "^2.2.0"
 wxc-sdk = "^1.8.0"
 IMAPClient = "^2.3.1"
+python-dotenv = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 

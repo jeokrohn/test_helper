@@ -9,7 +9,7 @@ import random
 from csv import DictReader
 from dataclasses import dataclass, field
 from io import StringIO
-from typing import Literal, List, Optional, Generator, Any, Dict
+from typing import List, Optional, Generator, Any
 
 from aiohttp import TCPConnector, ClientSession
 from bs4 import BeautifulSoup
@@ -23,11 +23,6 @@ __all__ = ['RandomLocation', 'GeoCodeResponseFeature', 'GeoCodifyResponse', 'Npa
 
 API_KEY = 'GEOCODIFY_API_KEY'
 ENV_FILE = 'geocodify.env'
-
-Layer = Literal[
-    'venue', 'street', 'country', 'macroregion', 'region', 'county', 'localadmin', 'locality', 'borough',
-    'neighbourhood', 'continent', 'empire', 'dependency', 'macrocounty', 'macrohood', 'microhood', 'disputed',
-    'postalcode', 'ocean', 'marinearea', 'address']
 
 
 class BaseModel(PydanticBase):
@@ -141,7 +136,7 @@ class GeoCodePoint(BaseModel):
 class FeatureProperties(BaseModel):
     feature_id: str = Field(alias='id')
     gid: str
-    layer: Layer
+    layer: str
     source: str
     source_id: str
     name: str
@@ -151,7 +146,7 @@ class FeatureProperties(BaseModel):
     postalcode_gid: Optional[str]
 
     confidence: float
-    match_type: Optional[Literal['fallback', 'exact']]  # not part of reverse response
+    match_type: Optional[str]  # not part of reverse response
     distance: Optional[float]
     accuracy: str
     country: Optional[str]
@@ -216,7 +211,7 @@ class BoundingBox(BaseModel):
 
 
 class GeoCodeResponseFeature(BaseModel):
-    feature_type: Literal['Feature'] = Field(alias='type')
+    feature_type: str = Field(alias='type')
     point: GeoCodePoint = Field(alias='geometry')
     properties: FeatureProperties
     bounding_box: Optional[BoundingBox] = Field(alias='bbox')
@@ -248,7 +243,7 @@ class GeoCodeResponseFeature(BaseModel):
 
 class GeoCodeResponseResponse(BaseModel):
     geocoding: Any
-    response_type: Literal['FeatureCollection'] = Field(alias='type')
+    response_type: str = Field(alias='type')
     features: List[GeoCodeResponseFeature]
     bounding_box: BoundingBox = Field(alias='bbox')
 
