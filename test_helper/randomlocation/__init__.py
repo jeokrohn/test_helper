@@ -14,8 +14,8 @@ from typing import List, Optional, Generator, Any
 from aiohttp import TCPConnector, ClientSession
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from pydantic import BaseModel as PydanticBase, Field, root_validator, validator, ValidationError
-from pydantic.errors import PydanticValueError
+from pydantic import BaseModel as PydanticBase, Field, ValidationError, field_validator, \
+    model_validator
 
 log = logging.getLogger(__name__)
 
@@ -27,9 +27,9 @@ ENV_FILE = 'geocodify.env'
 
 class BaseModel(PydanticBase):
     @classmethod
-    def parse_obj(cls, obj: Any):
+    def model_validate(cls, obj: Any):
         try:
-            return super().parse_obj(obj)
+            return super().model_validate(obj)
         except ValidationError as e:
             log.error(f'failed to parse: {obj}')
             raise e
@@ -37,7 +37,7 @@ class BaseModel(PydanticBase):
 
 class ZipRecord(BaseModel):
     zip_code: str = Field(alias='zip5')
-    record_type: Optional[str] = Field(alias='recordType')
+    record_type: Optional[str] = Field(alias='recordType', default=None)
 
     def __repr__(self):
         return self.zip_code
@@ -57,8 +57,8 @@ class ZipRecord(BaseModel):
 
 class ZipResult(BaseModel):
     status: str = Field(alias='resultStatus')
-    city: Optional[str]
-    state: Optional[str]
+    city: Optional[str] = None
+    state: Optional[str] = None
     zip_list: List[ZipRecord] = Field(alias='zipList', default_factory=list)
 
     @property
@@ -90,7 +90,7 @@ class NpaInfo(BaseModel):
 
 class NpaCity(BaseModel):
 
-    @validator('city', 'county', pre=True)
+    @field_validator('city', 'county', mode='before')
     def to_title(cls, v):
         return v.title()
 
@@ -104,16 +104,11 @@ class GeoCodeResponseMeta(BaseModel):
     code: int
 
 
-class GeoCodePointValueError(PydanticValueError):
-    code = 'failed to validate'
-    msg_template = 'exception in validator: {err}'
-
-
 class GeoCodePoint(BaseModel):
     lat: float
     lon: float
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def lat_lon(cls, values):
         """
         allow lat, lon or coordinates(list of two floats)
@@ -125,11 +120,11 @@ class GeoCodePoint(BaseModel):
         try:
             # convert from a list of two floats in "coordinates"
             if values['type'] != 'Point':
-                raise GeoCodePointValueError(err=f'wrong type, expected "Point"')
+                raise ValueError(f'wrong type, expected "Point"')
             values = {'lat': values['coordinates'][1],
                       'lon': values['coordinates'][0]}
         except Exception as e:
-            raise GeoCodePointValueError(err=e)
+            raise e
         return values
 
 
@@ -140,39 +135,39 @@ class FeatureProperties(BaseModel):
     source: str
     source_id: str
     name: str
-    housenumber: Optional[str]
-    street: Optional[str]
-    postalcode: Optional[str]
-    postalcode_gid: Optional[str]
+    housenumber: Optional[str] = None
+    street: Optional[str] = None
+    postalcode: Optional[str] = None
+    postalcode_gid: Optional[str] = None
 
     confidence: float
-    match_type: Optional[str]  # not part of reverse response
-    distance: Optional[float]
+    match_type: Optional[str] = None  # not part of reverse response
+    distance: Optional[float] = None
     accuracy: str
-    country: Optional[str]
-    country_gid: Optional[str]
-    country_a: Optional[str]
-    region: Optional[str]
-    region_gid: Optional[str]
-    region_a: Optional[str]
-    macrocounty: Optional[str]
-    macrocounty_gid: Optional[str]
-    county: Optional[str]
-    county_gid: Optional[str]
-    county_a: Optional[str]
-    localadmin: Optional[str]
-    localadmin_gid: Optional[str]
-    locality: Optional[str]
-    locality_gid: Optional[str]
-    locality_a: Optional[str]
-    borough: Optional[str]
-    borough_gid: Optional[str]
-    neighbourhood: Optional[str]
-    neighbourhood_gid: Optional[str]
+    country: Optional[str] = None
+    country_gid: Optional[str] = None
+    country_a: Optional[str] = None
+    region: Optional[str] = None
+    region_gid: Optional[str] = None
+    region_a: Optional[str] = None
+    macrocounty: Optional[str] = None
+    macrocounty_gid: Optional[str] = None
+    county: Optional[str] = None
+    county_gid: Optional[str] = None
+    county_a: Optional[str] = None
+    localadmin: Optional[str] = None
+    localadmin_gid: Optional[str] = None
+    locality: Optional[str] = None
+    locality_gid: Optional[str] = None
+    locality_a: Optional[str] = None
+    borough: Optional[str] = None
+    borough_gid: Optional[str] = None
+    neighbourhood: Optional[str] = None
+    neighbourhood_gid: Optional[str] = None
     continent: str
     continent_gid: str
     label: str
-    addendum: Optional[dict]
+    addendum: Optional[dict] = None
 
 
 class BoundingBox(BaseModel):
@@ -214,9 +209,9 @@ class GeoCodeResponseFeature(BaseModel):
     feature_type: str = Field(alias='type')
     point: GeoCodePoint = Field(alias='geometry')
     properties: FeatureProperties
-    bounding_box: Optional[BoundingBox] = Field(alias='bbox')
+    bounding_box: Optional[BoundingBox] = Field(alias='bbox', default=None)
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def bbox_from_list(cls, values):
         """
         bounding_box from list of floats
@@ -247,7 +242,7 @@ class GeoCodeResponseResponse(BaseModel):
     features: List[GeoCodeResponseFeature]
     bounding_box: BoundingBox = Field(alias='bbox')
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def bbox_from_list(cls, values):
         """
         bounding_box from list of floats
@@ -377,7 +372,7 @@ class RandomLocation:
         params['api_key'] = self._api_key
         async with self._session.get(url=url, params=params, **kwargs) as r:
             data = await r.json()
-        return GeoCodifyResponse.parse_obj(data)
+        return GeoCodifyResponse.model_validate(data)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
@@ -399,7 +394,7 @@ class RandomLocation:
         }
         async with self._session.post(url=url, data=data, headers=headers) as r:
             data = await r.json()
-        result = ZipResult.parse_obj(data)
+        result = ZipResult.model_validate(data)
         log.debug(f'get_zips({city}, {state}): {result.status} {len(result.zip_list)} -> '
                   f'{", ".join(f"{r.zip_code}" for r in result.zip_list)}')
         return result
@@ -413,7 +408,7 @@ class RandomLocation:
         url = f'{self._base_url}/geocode'
         params = {'q': search}
         data = await self._geo_get(url=url, params=params)
-        result = GeoCodifyResponse.parse_obj(data)
+        result = GeoCodifyResponse.model_validate(data)
         return result
 
     async def reverse(self, *, lat: float, lon: float) -> GeoCodifyResponse:
@@ -421,7 +416,7 @@ class RandomLocation:
                   'lng': lon}
         url = f'{self._base_url}/reverse'
         data = await self._geo_get(url=url, params=params)
-        result = GeoCodifyResponse.parse_obj(data)
+        result = GeoCodifyResponse.model_validate(data)
         return result
 
     async def load_npa_data(self) -> List[NpaInfo]:
@@ -443,7 +438,7 @@ class RandomLocation:
         for row in reader:
             # Weirdness... There is a row with None as key?
             row.pop(None, None)
-            npa_info = NpaInfo.parse_obj(row)
+            npa_info = NpaInfo.model_validate(row)
             result.append(npa_info)
         return result
 
@@ -485,7 +480,7 @@ class RandomLocation:
 
             # create dict and parse into object
             data = {k: v for k, v in zip(columns, values)}
-            result.append(NpaCity.parse_obj(data))
+            result.append(NpaCity.model_validate(data))
         log.debug(f'npa_cities({npa}): {len(result)} -> {", ".join(f"{r.city}" for r in result)}')
         return result
 

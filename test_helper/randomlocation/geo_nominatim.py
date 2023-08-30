@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -15,7 +14,7 @@ class GeoAbc(ABC):
 
 @dataclass(init=False)
 class GeoNominatim(GeoAbc):
-    _nominatim: Optional[Nominatim]
+    _nominatim: Optional[Nominatim] = None
 
     def __init__(self):
         self._nominatim = Nominatim(

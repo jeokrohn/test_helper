@@ -74,7 +74,7 @@ class Registered(BaseModel):
 
 class ID(BaseModel):
     name: str
-    value: Optional[str]
+    value: Optional[str] = None
 
 
 class Picture(BaseModel):
@@ -84,19 +84,19 @@ class Picture(BaseModel):
 
 
 class User(BaseModel):
-    uid: Optional[str]
-    gender: Optional[str]
-    name: Optional[Name]
-    location: Optional[Location]
-    email: Optional[str]
-    login: Optional[Login]
-    dob: Optional[DOB]
-    registered: Optional[Registered]
-    phone: Optional[str]
-    cell: Optional[str]
-    id: Optional[ID]
-    picture: Optional[Picture]
-    nat: Optional[str]
+    uid: Optional[str] = None
+    gender: Optional[str] = None
+    name: Optional[Name] = None
+    location: Optional[Location] = None
+    email: Optional[str] = None
+    login: Optional[Login] = None
+    dob: Optional[DOB] = None
+    registered: Optional[Registered] = None
+    phone: Optional[str] = None
+    cell: Optional[str] = None
+    id: Optional[ID] = None
+    picture: Optional[Picture] = None
+    nat: Optional[str] = None
 
     @property
     def display_name(self) -> str:
@@ -119,7 +119,7 @@ class User(BaseModel):
 
 class ApiResult(BaseModel):
     results: List[User]
-    info: Optional[ResultInfo]
+    info: Optional[ResultInfo] = None
 
 
 def validate(var: Union[None, str, List[str]],
@@ -176,7 +176,7 @@ class RandomUserApi:
         async with self.session.get(url, params=params) as r:
             data = await r.json()
         try:
-            result = ApiResult.parse_obj(data)
+            result = ApiResult.model_validate(data)
         except pydantic.ValidationError as e:
             raise
         return result.results
