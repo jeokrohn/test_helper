@@ -53,10 +53,11 @@ class RandomUserUtil:
         email = self._uid_to_email.format(uid=uid)
         return email
 
-    async def get_new_users(self, number_of_users: int) -> List[User]:
+    async def get_new_users(self, number_of_users: int, inc: Union[str, list[str]] = 'name') -> List[User]:
         """
         Get a list of new random users
         :param number_of_users:
+        :param inc:
         :return:
         """
         new_users = []
@@ -71,7 +72,7 @@ class RandomUserUtil:
             async with RandomUserApi() as random_user:
                 # get new users
                 new_batch = await random_user.users(results=number_of_users - len(new_users),
-                                                    inc='name',
+                                                    inc=inc,
                                                     nat='us')
 
             # only consider random users with not existing display names
