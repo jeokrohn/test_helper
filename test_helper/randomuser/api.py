@@ -47,7 +47,7 @@ class Location(BaseModel):
     city: str
     state: str
     country: str
-    postcode: str
+    postcode: Union[str, int]
     coordinates: Coordinates
     timezone: Timezone
 
