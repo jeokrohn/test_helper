@@ -425,7 +425,9 @@ class RandomLocation:
 
         :return:
         """
-        url = 'https://www.nationalnanpa.com/nanp1/npa_report.csv'
+        # old url
+        # url = 'https://www.nationalnanpa.com/nanp1/npa_report.csv'
+        url = 'https://reports.nanpa.com/public/npa_report.csv'
         async with self._session.get(url=url) as r:
             csv = await r.text()
         csv_io = StringIO(csv)
