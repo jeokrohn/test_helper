@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "test_helper"
-version = "0.2.7"
+version = "0.2.8"
 description = ""
 authors = ["Your Name <you@example.com>"]
 
@@ -14,8 +14,6 @@ wxc-sdk = "^1.8.0"
 IMAPClient = "^2.3.1"
 python-dotenv = "^1.0.0"
 requests = "^2.31.0"
-
-[tool.poetry.dev-dependencies]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

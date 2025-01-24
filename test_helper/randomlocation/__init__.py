@@ -446,7 +446,40 @@ class RandomLocation:
 
     async def npa_cities(self, *, npa: str) -> List[NpaCity]:
         """
+        Get cities for given NPA from areacode.org
+        :param npa:
+        :return:
+        """
+        url = f'https://areacode.org/{npa}'
+        async with self._session.get(url=url) as r:
+            body = await r.text()
+        soup = BeautifulSoup(body, 'html.parser')
+        # Find the table by its ID
+        table = soup.find('table', id='ac_table')
+
+        # Initialize a list to store the extracted data
+        cities = []
+
+        # Iterate through each row in the table, skipping the header row
+        for row in table.find_all('tr')[1:]:
+            # Find all cells in the row
+            cells = row.find_all('td')
+            if len(cells) == 3:
+                # Extract city, county, and state/province
+                city = cells[0].get_text(strip=True)
+                county = cells[1].get_text(strip=True)
+                state = cells[2].get_text(strip=True)
+
+                # Append the extracted information as a tuple
+                data = {'NPA': npa, 'City': city, 'County': county, 'State': state}
+                cities.append(NpaCity.model_validate(data))
+        return cities
+
+    async def npa_cities_nanpa(self, *, npa: str) -> List[NpaCity]:
+        """
         Get cities for given NPA from NANPA website
+
+        this does not work anymore, the website has changed
 
         :param npa:
         :return:
@@ -484,7 +517,6 @@ class RandomLocation:
             data = {k: v for k, v in zip(columns, values)}
             result.append(NpaCity.model_validate(data))
         log.debug(f'npa_cities({npa}): {len(result)} -> {", ".join(f"{r.city}" for r in result)}')
-        return result
 
     async def zip_random_address(self, *, zip_code: str, state: str, default_city: str = None) -> RandomAddressResponse:
         """
