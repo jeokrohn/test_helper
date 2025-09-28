@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from io import StringIO
 from typing import List, Optional, Generator, Any
 
-from aiohttp import TCPConnector, ClientSession
+from aiohttp import TCPConnector, ClientSession, ClientResponseError
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pydantic import BaseModel as PydanticBase, Field, ValidationError, field_validator, \
@@ -477,8 +477,14 @@ class RandomLocation:
         :return:
         """
         url = f'https://areacode.org/{npa}'
-        async with self._session.get(url=url) as r:
-            body = await r.text()
+        try:
+            async with self._session.get(url=url) as r:
+                body = await r.text()
+        except ClientResponseError as e:
+            if e.status == 404:
+                log.debug(f'npa_cities({npa}): no such NPA')
+                return []
+            raise e
         soup = BeautifulSoup(body, 'html.parser')
         # Find the table by its ID
         table = soup.find('table', id='ac_table')

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "test_helper"
-version = "0.2.9"
+version = "0.2.10"
 description = ""
 authors = ["Your Name <you@example.com>"]
 
