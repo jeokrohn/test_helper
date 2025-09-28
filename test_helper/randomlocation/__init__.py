@@ -22,7 +22,11 @@ log = logging.getLogger(__name__)
 __all__ = ['RandomLocation', 'GeoCodeResponseFeature', 'GeoCodifyResponse', 'NpaInfo', 'Address']
 
 API_KEY = 'GEOCODIFY_API_KEY'
+ZIPCODEBASE_API_KEY = 'ZIPCODEBASE_API_KEY'
 ENV_FILE = 'geocodify.env'
+
+# Flag: use USPS API tzo get ZIP codes for city
+USE_USPS = False
 
 
 class BaseModel(PydanticBase):
@@ -380,6 +384,7 @@ class RandomLocation:
     async def get_zips(self, *, city: str, state: str) -> ZipResult:
         """
         Get list of zip codes for a given city from USPS API
+
         :param city:
         :param state:
         :return:
@@ -397,6 +402,27 @@ class RandomLocation:
         result = ZipResult.model_validate(data)
         log.debug(f'get_zips({city}, {state}): {result.status} {len(result.zip_list)} -> '
                   f'{", ".join(f"{r.zip_code}" for r in result.zip_list)}')
+        return result
+
+    async def get_zips_zipcode_base(self, *, city: str, state: str) -> list[str]:
+        """
+        Get list of zip codes for a given city from zipcodebase.com API
+        """
+
+        api_key = os.getenv(ZIPCODEBASE_API_KEY)
+        if api_key is None:
+            raise KeyError(f'Zipcodebase API key needs to be specified in {ZIPCODEBASE_API_KEY} environment variable')
+        params = (
+            ("city", city),
+            ("state", state),
+            ("country", "US"),
+            ("apikey", api_key)
+        )
+        url = 'https://app.zipcodebase.com/api/v1/code/city'
+        async with self._session.get(url=url, params=params, ) as r:
+            data = await r.json()
+        result = data['results']
+        log.debug(f'get_zips_zipcode_base({city}, {state}): {result}')
         return result
 
     async def geocode(self, *, search: str) -> GeoCodifyResponse:
@@ -600,8 +626,11 @@ class RandomLocation:
         :return:
         """
         # get zip codes for city
-        zip_result = await self.get_zips(city=city, state=state)
-        zips_to_try = [zip_record.zip_code for zip_record in zip_result.regular_zips]
+        if USE_USPS:
+            zip_result = await self.get_zips(city=city, state=state)
+            zips_to_try = [zip_record.zip_code for zip_record in zip_result.regular_zips]
+        else:
+            zips_to_try = await self.get_zips_zipcode_base(city=city, state=state)
         if not zips_to_try:
             log.debug(f'No zip codes for {city}, {state}')
             return None
@@ -609,10 +638,10 @@ class RandomLocation:
         # iterate through ZIPs in random order
         random.shuffle(zips_to_try)
         for zip_code in zips_to_try:
-            address = await self.zip_random_address(zip_code=zip_code, state=zip_result.state, default_city=city)
+            address = await self.zip_random_address(zip_code=zip_code, state=state, default_city=city)
             if address:
                 return address
-            log.debug(f'No address for {zip_code}, {zip_result.state}')
+            log.debug(f'No address for {zip_code}, {state}')
         # for zip_code ...
         return None
 

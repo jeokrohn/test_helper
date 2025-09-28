@@ -194,6 +194,14 @@ class TestZIP(GeoCodifyBase):
 
         asyncio.run(test())
 
+    def test_001_new_york_zipcode_base(self):
+        async def test():
+            async with RandomLocation() as zip_api:
+                zip_codes = await zip_api.get_zips_zipcode_base(city='New York', state='NY')
+            pass
+
+        asyncio.run(test())
+
     def test_002_manhattan(self):
         async def test():
             async with RandomLocation() as zip_api:
