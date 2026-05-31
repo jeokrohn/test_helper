@@ -10,7 +10,7 @@ from unittest import TestCase, skip
 
 from test_helper.randomlocation import RandomLocation
 from test_helper.randomlocation.geo_nominatim import GeoNominatim
-from testbase import time_it, GeoCodifyEnv
+from test.testbase import time_it, GeoCodifyEnv
 
 
 def sync2async(func):

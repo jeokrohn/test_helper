@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from io import StringIO
 from typing import List, Optional, Generator, Any
 
+import requests
 from aiohttp import TCPConnector, ClientSession, ClientResponseError
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 from pydantic import BaseModel as PydanticBase, Field, ValidationError, field_validator, \
     model_validator
 
@@ -323,6 +323,188 @@ class Address:
     def __repr__(self):
         return f'{self.address1}, {self.city}, {self.state_or_province_abbr} {self.zip_or_postal_code} USA'
 
+PHOTON_URL = "https://photon.komoot.io/api/"
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+@dataclass
+class GeoLocation:
+    lat: float
+    lon: float
+    name: str
+    city: str | None
+    state: str | None
+    country: str | None
+    osm_type: str | None
+
+    def __str__(self) -> str:
+        parts = [self.name]
+        if self.city and self.city != self.name:
+            parts.append(self.city)
+        if self.state:
+            parts.append(self.state)
+        if self.country:
+            parts.append(self.country)
+        return ", ".join(parts)
+
+
+@dataclass
+class StreetAddress:
+    lat: float
+    lon: float
+    house_number: str
+    street: str
+    city: str | None
+    postcode: str | None
+    state: str | None
+
+    def __str__(self) -> str:
+        parts = [f"{self.house_number} {self.street}".strip()]
+        if self.city:
+            parts.append(self.city)
+        if self.state:
+            parts.append(self.state)
+        if self.postcode:
+            parts.append(self.postcode)
+        return ", ".join(p for p in parts if p)
+
+
+def _forward_geocode(
+        query: str,
+        limit: int = 5,
+        lang: str = "en",
+        layer: str | None = None,
+        bias_lat: float | None = None,
+        bias_lon: float | None = None,
+) -> list[GeoLocation]:
+    """Forward geocode a query string using Photon.
+
+    Args:
+        query:    Search string, e.g. "Seattle, WA" or "1600 Pennsylvania Ave"
+        limit:    Maximum number of results to return (default 5)
+        lang:     Response language code, e.g. "en", "de" (default "en")
+        layer:    Optional filter: "city", "street", "address", "country", etc.
+        bias_lat: Latitude to bias results toward
+        bias_lon: Longitude to bias results toward (required if bias_lat set)
+
+    Returns:
+        List of GeoLocation dataclasses, ordered by relevance.
+
+    Raises:
+        ValueError:  If bias_lat is given without bias_lon or vice versa.
+        requests.HTTPError: On non-2xx responses.
+    """
+    if (bias_lat is None) != (bias_lon is None):
+        raise ValueError("Provide both bias_lat and bias_lon, or neither.")
+
+    params: dict[str, str | int | float] = {"q": query, "limit": limit, "lang": lang}
+    if layer:
+        params["layer"] = layer
+    if bias_lat is not None:
+        params["lat"] = bias_lat
+        params["lon"] = bias_lon  # type: ignore[assignment]
+
+    headers = {"User-Agent": "photon-wrapper/1.0"}
+    response = requests.get(PHOTON_URL, params=params, headers=headers, timeout=10)
+    response.raise_for_status()
+
+    results = []
+    for feature in response.json().get("features", []):
+        lon, lat = feature["geometry"]["coordinates"]  # GeoJSON is [lon, lat]
+        props = feature.get("properties", {})
+        results.append(
+            GeoLocation(
+                lat=lat,
+                lon=lon,
+                name=props.get("name", ""),
+                city=props.get("city"),
+                state=props.get("state"),
+                country=props.get("country"),
+                osm_type=props.get("osm_type"),
+            )
+        )
+    return results
+
+
+def _geocode_one(query: str, **kwargs) -> GeoLocation | None:
+    """Return the top result for a query, or None if nothing found."""
+    results = _forward_geocode(query, limit=1, **kwargs)
+    return results[0] if results else None
+
+
+# ---------------------------------------------------------------------------
+# Overpass — nearby addresses
+# ---------------------------------------------------------------------------
+
+def _nearby_addresses(
+        lat: float,
+        lon: float,
+        radius_m: int = 200,
+        limit: int | None = None,
+) -> list[StreetAddress]:
+    """Return street addresses within radius_m metres of the given point.
+
+    Uses the Overpass API to query OSM nodes and ways that carry addr:*
+    tags. Results are sorted by distance from the query point.
+
+    Args:
+        lat:      Centre latitude
+        lon:      Centre longitude
+        radius_m: Search radius in metres (default 200)
+        limit:    Cap the number of results (default: return all found)
+
+    Returns:
+        List of StreetAddress dataclasses, sorted nearest-first.
+
+    Raises:
+        requests.HTTPError: On non-2xx responses.
+    """
+    query = f"""
+[out:json][timeout:25];
+(
+  node(around:{radius_m},{lat},{lon})[\"addr:housenumber\"];
+  way(around:{radius_m},{lat},{lon})[\"addr:housenumber\"];
+);
+out center;
+"""
+    headers = {"User-Agent": "photon-wrapper/1.0"}
+    response = requests.post(OVERPASS_URL, data={"data": query}, headers=headers, timeout=30)
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        body_snippet = response.text[:500].replace('\n', ' ')
+        raise requests.HTTPError(f'{e}; body={body_snippet}', response=response) from e
+
+    results: list[StreetAddress] = []
+    for element in response.json().get("elements", []):
+        tags = element.get("tags", {})
+
+        # Ways have a synthetic "center" point; nodes have lat/lon directly
+        if element["type"] == "way":
+            center = element.get("center", {})
+            elat, elon = center.get("lat"), center.get("lon")
+        else:
+            elat, elon = element.get("lat"), element.get("lon")
+
+        if elat is None or elon is None:
+            continue
+
+        results.append(
+            StreetAddress(
+                lat=elat,
+                lon=elon,
+                house_number=tags.get("addr:housenumber", ""),
+                street=tags.get("addr:street", ""),
+                city=tags.get("addr:city"),
+                postcode=tags.get("addr:postcode"),
+                state=tags.get("addr:state"),
+            )
+        )
+
+    if limit is not None:
+        results = results[:limit]
+
+    return results
 
 # Response for random address calls:
 # Address instance
@@ -341,18 +523,20 @@ class RandomLocation:
     def __init__(self, *, api_key: str = None):
         self._api_key = None
         self._session = None
-        # determine API key for geocodify API
-        api_key = api_key or os.getenv(API_KEY)
-        env_path = os.path.join(os.getcwd(), ENV_FILE)
-        if api_key is None:
-            # load geocodify.env from current dir
-            load_dotenv(env_path)
-            api_key = os.getenv(API_KEY)
-        if api_key is None:
-            raise KeyError(
-                f'Geocodify API key needs to be specified by passing to __init__, in {API_KEY} environment variable, '
-                f'or in {env_path}')
-        self._api_key = api_key
+
+        # # determine API key for geocodify API
+        # api_key = api_key or os.getenv(API_KEY)
+        # env_path = os.path.join(os.getcwd(), ENV_FILE)
+        # if api_key is None:
+        #     # load geocodify.env from current dir
+        #     load_dotenv(env_path)
+        #     api_key = os.getenv(API_KEY)
+        # if api_key is None:
+        #     raise KeyError(
+        #         f'Geocodify API key needs to be specified by passing to __init__, in {API_KEY} environment variable, '
+        #         f'or in {env_path}')
+        # self._api_key = api_key
+
         self._session = ClientSession(raise_for_status=True, connector_owner=True,
                                       connector=TCPConnector(force_close=True,
                                                              enable_cleanup_closed=True))
@@ -365,18 +549,18 @@ class RandomLocation:
             await self._session.close()
         self._session = None
 
-    async def _geo_get(self, *, url: str, params: dict, **kwargs) -> GeoCodifyResponse:
-        """
-        get on geocodify API requires the API key as parameter
-        :param url:
-        :param params:
-        :param kwargs:
-        :return:
-        """
-        params['api_key'] = self._api_key
-        async with self._session.get(url=url, params=params, **kwargs) as r:
-            data = await r.json()
-        return GeoCodifyResponse.model_validate(data)
+    # async def _geo_get(self, *, url: str, params: dict, **kwargs) -> GeoCodifyResponse:
+    #     """
+    #     get on geocodify API requires the API key as parameter
+    #     :param url:
+    #     :param params:
+    #     :param kwargs:
+    #     :return:
+    #     """
+    #     params['api_key'] = self._api_key
+    #     async with self._session.get(url=url, params=params, **kwargs) as r:
+    #         data = await r.json()
+    #     return GeoCodifyResponse.model_validate(data)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
@@ -425,25 +609,25 @@ class RandomLocation:
         log.debug(f'get_zips_zipcode_base({city}, {state}): {result}')
         return result
 
-    async def geocode(self, *, search: str) -> GeoCodifyResponse:
-        """
-        Geocode a search request
-        :param search:
-        :return:
-        """
-        url = f'{self._base_url}/geocode'
-        params = {'q': search}
-        data = await self._geo_get(url=url, params=params)
-        result = GeoCodifyResponse.model_validate(data)
-        return result
-
-    async def reverse(self, *, lat: float, lon: float) -> GeoCodifyResponse:
-        params = {'lat': lat,
-                  'lng': lon}
-        url = f'{self._base_url}/reverse'
-        data = await self._geo_get(url=url, params=params)
-        result = GeoCodifyResponse.model_validate(data)
-        return result
+    # async def geocode(self, *, search: str) -> GeoCodifyResponse:
+    #     """
+    #     Geocode a search request
+    #     :param search:
+    #     :return:
+    #     """
+    #     url = f'{self._base_url}/geocode'
+    #     params = {'q': search}
+    #     data = await self._geo_get(url=url, params=params)
+    #     result = GeoCodifyResponse.model_validate(data)
+    #     return result
+    #
+    # async def reverse(self, *, lat: float, lon: float) -> GeoCodifyResponse:
+    #     params = {'lat': lat,
+    #               'lng': lon}
+    #     url = f'{self._base_url}/reverse'
+    #     data = await self._geo_get(url=url, params=params)
+    #     result = GeoCodifyResponse.model_validate(data)
+    #     return result
 
     async def load_npa_data(self) -> List[NpaInfo]:
         """
@@ -624,31 +808,33 @@ class RandomLocation:
         log.debug(f'zip_random_address({zip_code}, {state}): {result}')
         return result
 
-    async def city_random_address(self, *, city: str, state: str) -> RandomAddressResponse:
+    @staticmethod
+    async def city_random_address(*, city: str, state: str) -> RandomAddressResponse:
         """
         random address for given city
         :param city:
         :param state:
         :return:
         """
-        # get zip codes for city
-        if USE_USPS:
-            zip_result = await self.get_zips(city=city, state=state)
-            zips_to_try = [zip_record.zip_code for zip_record in zip_result.regular_zips]
-        else:
-            zips_to_try = await self.get_zips_zipcode_base(city=city, state=state)
-        if not zips_to_try:
-            log.debug(f'No zip codes for {city}, {state}')
+        city_location = _geocode_one(f'{city}, {state}')
+        if city_location is None:
             return None
+        nearby = _nearby_addresses(city_location.lat, city_location.lon, radius_m=300, limit=25)
+        random.shuffle(nearby)
+        for candidate in nearby:
+            if not candidate.house_number or not candidate.street or not candidate.postcode:
+                continue
+            address = Address(address1=f'{candidate.house_number} {candidate.street}'.strip(),
+                              address2='',
+                              city=candidate.city or city,
+                              state_or_province=candidate.state,
+                              country='US',
+                              countr_abbr='US',
+                              geo_location=GeoCodePoint(lat=candidate.lat, lon=candidate.lon),
+                              state_or_province_abbr=candidate.state,
+                              zip_or_postal_code=candidate.postcode)
+            return address
 
-        # iterate through ZIPs in random order
-        random.shuffle(zips_to_try)
-        for zip_code in zips_to_try:
-            address = await self.zip_random_address(zip_code=zip_code, state=state, default_city=city)
-            if address:
-                return address
-            log.debug(f'No address for {zip_code}, {state}')
-        # for zip_code ...
         return None
 
     async def npa_random_address(self, *, npa: str) -> RandomAddressResponse:
@@ -681,8 +867,9 @@ class RandomLocation:
         us_npas = [npa.npa
                    for npa in npa_data
                    if npa.country == 'US' and npa.in_service]
+        random.shuffle(us_npas)
         while True:
-            npa = random.choice(us_npas)
+            npa = us_npas.pop()
             address = await self.npa_random_address(npa=npa)
             if address is not None:
                 break

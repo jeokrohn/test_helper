@@ -32,7 +32,7 @@ class GeoCodifyEnv(GeoLocationEnv):
 
     @classmethod
     def setUpClass(cls) -> None:
-        env_path = os.path.abspath(os.path.join(os.getcwd(), '..', 'geocodify.env'))
+        env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'geocodify.env'))
         load_dotenv(env_path)
         super().setUpClass()
 
